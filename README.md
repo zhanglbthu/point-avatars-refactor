@@ -1,0 +1,2 @@
+# point-avatars-refactor
+.
