@@ -72,12 +72,15 @@ class FaceDataset(torch.utils.data.Dataset):
         
         # 如果sub_view为None，则sub_view为sub_dir
         if sub_view is None:
+            print("sub_view is None")
             self.sub_view = sub_dir
         else:
+            print("sub_view is not None")
             self.sub_view = [sub_view]  
         
+        print("self.sub_view: ", self.sub_view)
+        
         for dir in self.sub_view:
-            dir = str(dir)
             instance_dir = os.path.join(data_folder, subject_name, subject_name, dir)
             assert os.path.exists(instance_dir), "Data directory {} is empty".format(instance_dir)
 

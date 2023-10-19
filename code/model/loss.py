@@ -91,7 +91,8 @@ class Loss(nn.Module):
             vgg_loss = self.get_vgg_loss(predicted, gt)
             out['vgg_loss'] = vgg_loss
             out['loss'] += vgg_loss * self.vgg_feature_weight
-
+        
+        # * sdf?
         if self.sdf_consistency_weight > 0:
             assert self.eikonal_weight > 0
             sdf_consistency_loss = self.get_sdf_consistency_loss(model_outputs['sdf_values'])

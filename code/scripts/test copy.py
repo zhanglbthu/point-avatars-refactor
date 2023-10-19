@@ -8,9 +8,6 @@ import utils.plots as plt
 
 from functools import partial
 from model.point_avatar_model import PointAvatar 
-
-from utils.plots import save_pcl_to_ply
-
 print = partial(print, flush=True)
 class TestRunner():
     def __init__(self, **kwargs):
@@ -29,9 +26,6 @@ class TestRunner():
 
         self.eval_dir = os.path.join(self.expdir, train_split_name, 'eval')
         self.train_dir = os.path.join(self.expdir, train_split_name, 'train')
-        
-        # ply path
-        self.ply_dir = '../ply'
 
         if kwargs['load_path'] != '':
             load_path = kwargs['load_path']
@@ -47,19 +41,6 @@ class TestRunner():
 
         self.use_background = self.conf.get_bool('dataset.use_background', default=False)
 
-        self.sub_view = self.conf.get_list('dataset.train.sub_view', default=[]) # change
-        self.n_views = len(self.sub_view)
-        print('sub_view: ', self.sub_view)
-        # instantiate a dataset object
-        # json_name: 'flame_params.json'
-        # change the dataset class from single view to multi views
-        if 'sub_view' in self.conf.get_config('dataset.train'):
-            del self.conf.get_config('dataset.train')['sub_view']
-            print('sub_view is deleted from config file\n')
-        if 'sub_view' in self.conf.get_config('dataset.test'):
-            del self.conf.get_config('dataset.test')['sub_view']
-            print('sub_view is deleted from config file\n')
-        
         self.train_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
                                                                                           subject_name=self.conf.get_string('dataset.subject_name'),
                                                                                           json_name=self.conf.get_string('dataset.json_name'),
@@ -76,7 +57,7 @@ class TestRunner():
                                                                                          use_background=self.use_background,
                                                                                          is_eval=True,
                                                                                          **self.conf.get_config('dataset.test'))
-        print(self.plot_dataset.data['expressions'].shape)
+
         print('Finish loading data ...')
 
         self.model = PointAvatar(conf=self.conf.get_config('model'),
@@ -96,13 +77,16 @@ class TestRunner():
             os.path.join(old_checkpnts_dir, 'ModelParameters', str(kwargs['checkpoint']) + ".pth"))
         n_points = saved_model_state["model_state_dict"]['pc.points'].shape[0]
         
+        print('n_points: ', n_points) # ?
+        
         self.model.pc.init(n_points)
         self.model.pc = self.model.pc.cuda() 
+        
+        print('pc.points: ', self.model.pc.points.shape) # ?
 
         self.model.raster_settings.radius = saved_model_state['radius']
 
         self.model.load_state_dict(saved_model_state["model_state_dict"]) #, strict=False)
-
         self.start_epoch = saved_model_state['epoch']
         self.optimize_expression = self.conf.get_bool('train.optimize_expression')
         self.optimize_pose = self.conf.get_bool('train.optimize_camera')
@@ -115,7 +99,6 @@ class TestRunner():
                                                            )
         self.optimize_tracking = False
         if self.optimize_inputs:
-            print("Optimizing tracking")
             self.input_params_subdir = "TestInputParameters"
             test_input_params = []
             if self.optimize_expression:
@@ -205,14 +188,15 @@ class TestRunner():
         eval_all = True
         eval_iterator = iter(self.plot_dataloader)
         is_first_batch = True
-        print(len(self.plot_dataloader))
+        
         for img_index in range(len(self.plot_dataloader)):
             indices, model_input, ground_truth = next(eval_iterator)
             # print model_input info
             batch_size = model_input['expression'].shape[0]
-            print("expression shape: {}".format(model_input['expression'].shape))
+
             # convert to cuda
             for k, v in model_input.items():
+                print(k)
                 try:
                     model_input[k] = v.cuda()
                 except:
@@ -230,7 +214,7 @@ class TestRunner():
                 if self.optimize_pose:
                     model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
                     model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
-            
+
             model_outputs = self.model(model_input)
             for k, v in model_outputs.items():
                 try:
@@ -254,10 +238,6 @@ class TestRunner():
                      is_eval=eval_all,
                      first=is_first_batch,
                      )
-            if is_first_batch:
-                sdf_values = model_outputs['sdf_values']
-                print("SDF shape: {}".format(sdf_values.shape))
-                print("SDF values: {}".format(sdf_values))
             is_first_batch = False
             del model_outputs, ground_truth
 

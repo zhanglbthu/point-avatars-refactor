@@ -10,7 +10,6 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     
-    # General flags
     parser.add_argument('--conf', type=str)
     parser.add_argument('--is_eval', default=False, action="store_true", help='If set, only render images')
     # Training flags
@@ -23,7 +22,7 @@ if __name__ == '__main__':
     # Checkpoints
     parser.add_argument('--checkpoint', default='latest', type=str, help='The checkpoint epoch number in case of continuing from a previous run.')
     parser.add_argument('--load_path', type=str, default='', help='If set explicitly, then load from this path, instead of the continue-scripts path')
-    opt = parser.parse_args() # opt是一个命名空间对象，包含命令行参数
+    opt = parser.parse_args()
 
     if not opt.is_eval:
         runner = TrainRunner(conf=opt.conf,

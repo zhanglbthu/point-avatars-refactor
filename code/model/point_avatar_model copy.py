@@ -19,9 +19,6 @@ from model.geometry_network import GeometryNetwork
 from model.deformer_network import ForwardDeformer
 from model.texture_network import RenderingNetwork
 
-# from utils.mesh import generate_grid_points
-# from utils.mesh import generate_sphere_points
-# from utils.mesh import extract_geometry
 
 print_flushed = partial(print, flush=True)
 
@@ -29,44 +26,26 @@ print_flushed = partial(print, flush=True)
 class PointAvatar(nn.Module):
     def __init__(self, conf, shape_params, img_res, canonical_expression, canonical_pose, use_background):
         super().__init__()
-        """
-        .pkl: flame model
-        .npy: landmark embedding
-        shape_params: init shape params
-        canonical_expression: init expression params
-        canonical_pose: init pose params
-        """
-        self._output_test = {}
         self.FLAMEServer = FLAME('./flame/FLAME2020/generic_model.pkl', './flame/FLAME2020/landmark_embedding.npy',
                                  n_shape=100,
                                  n_exp=50,
-                                 shape_params=shape_params, 
+                                 shape_params=shape_params,
                                  canonical_expression=canonical_expression,
                                  canonical_pose=canonical_pose).cuda()
-        
-        # "\" is used to split a long line of code into multiple lines
         self.FLAMEServer.canonical_verts, self.FLAMEServer.canonical_pose_feature, self.FLAMEServer.canonical_transformations = \
             self.FLAMEServer(expression_params=self.FLAMEServer.canonical_exp, full_pose=self.FLAMEServer.canonical_pose)
-            
-        # squeeze(0): remove the first dimension
         self.FLAMEServer.canonical_verts = self.FLAMEServer.canonical_verts.squeeze(0)
-        
-        # prune_thresh: the threshold for pruning invisible points
-        # if the weight of a point is larger than prune_thresh, then the point is visible
         self.prune_thresh = conf.get_float('prune_thresh', default=0.5)
-        
         self.geometry_network = GeometryNetwork(**conf.get_config('geometry_network'))
         self.deformer_network = ForwardDeformer(FLAMEServer=self.FLAMEServer, **conf.get_config('deformer_network'))
         self.rendering_network = RenderingNetwork(**conf.get_config('rendering_network'))
-        
-        # ? ghostbone
         self.ghostbone = self.deformer_network.ghostbone
         if self.ghostbone:
             self.FLAMEServer.canonical_transformations = torch.cat([torch.eye(4).unsqueeze(0).unsqueeze(0).float().cuda(), self.FLAMEServer.canonical_transformations], 1)
-                
+        # 点云
         self.pc = PointCloud(**conf.get_config('point_cloud')).cuda()
+
         n_points = self.pc.points.shape[0]
-        
         self.img_res = img_res
         self.use_background = use_background
         if self.use_background:
@@ -74,46 +53,32 @@ class PointAvatar(nn.Module):
             self.background = nn.Parameter(init_background)
         else:
             self.background = torch.ones(img_res[0] * img_res[1], 3).float().cuda()
-            
         self.raster_settings = PointsRasterizationSettings(
             image_size=img_res[0],
             radius=self.pc.radius_factor * (0.75 ** math.log2(n_points / 100)),
             points_per_pixel=10
         )
-        
         # keypoint rasterizer is only for debugging camera intrinsics
         self.raster_settings_kp = PointsRasterizationSettings(
             image_size=self.img_res[0],
             radius=0.007,
             points_per_pixel=1
         )
-        
         self.visible_points = torch.zeros(n_points).bool().cuda()
         self.compositor = AlphaCompositor().cuda()
-        
-    # get_mesh
-    # def get_mesh(self, output_path, resolution, bound_min, bound_max, threshold):
-        # point_grids = generate_grid_points(bound_min, bound_max, resolution)
-        # point_grids = generate_sphere_points(0.5, resolution * resolution * resolution)
-        # print("point_grids.shape: ", point_grids.shape)
-        # import faulthandler; faulthandler.enable()
-        # geometry_output = self.geometry_network(point_grids)
-        # sdf_grids = geometry_output[:, 0]
-        # sdf_grids = sdf_grids.reshape(resolution, resolution, resolution).cpu().detach().numpy()
-        # return extract_geometry(output_path, sdf_grids, bound_min, bound_max, threshold, resolution)
-        
-    # compute canonical normals and feature vectors
+
+
     def _compute_canonical_normals_and_feature_vectors(self):
+        # 分离出一个新张量p，这个张量将不再与梯度计算相关，即不会参与反向传播的梯度计算过程
         p = self.pc.points.detach()
         # randomly sample some points in the neighborhood within 0.25 distance
         eikonal_points = torch.cat([p, p + (torch.rand(p.shape).cuda() - 0.5) * 0.5], dim=0)
         eikonal_output, grad_thetas = self.geometry_network.gradient(eikonal_points.detach())
         n_points = self.pc.points.shape[0]
         canonical_normals = torch.nn.functional.normalize(grad_thetas[:n_points, :], dim=1)
-        
         geometry_output = self.geometry_network(self.pc.points.detach())  # not using SDF to regularize point location
         sdf_values = geometry_output[:, 0]
-        
+
         feature_vector = torch.sigmoid(geometry_output[:, 1:] * 10)  # albedo vector
 
         if self.training and hasattr(self, "_output"):
@@ -121,15 +86,12 @@ class PointAvatar(nn.Module):
             self._output['grad_thetas'] = grad_thetas
         if not self.training:
             self._output['pnts_albedo'] = feature_vector
-            self._output['sdf_values'] = sdf_values # ?
 
         return canonical_normals, feature_vector
 
-    # render the point cloud
     def _render(self, point_cloud, cameras, render_kp=False):
         rasterizer = PointsRasterizer(cameras=cameras, raster_settings=self.raster_settings if not render_kp else self.raster_settings_kp)
         fragments = rasterizer(point_cloud)
-        
         r = rasterizer.raster_settings.radius
         dists2 = fragments.dists.permute(0, 3, 1, 2)
         alphas = 1 - dists2 / (r * r)
@@ -185,7 +147,7 @@ class PointAvatar(nn.Module):
         total_points = batch_size * n_points
 
         canonical_normals, feature_vector = self._compute_canonical_normals_and_feature_vectors()
-        
+
         transformed_points, rgb_points, albedo_points, shading_points, normals_points = self.get_rbg_value_functorch(pnts_c=self.pc.points,
                                                                             normals=canonical_normals,
                                                                             feature_vectors=feature_vector,
@@ -267,7 +229,6 @@ class PointAvatar(nn.Module):
             if self.deformer_network.deform_c:
                 output_testing['unconstrained_canonical_points'] = self.pc.points
             output.update(output_testing)
-        output.update(self._output_test)
         output.update(self._output)
 
         return output
@@ -311,4 +272,3 @@ class PointAvatar(nn.Module):
         albedo = feature_vectors
         rgb_vals = torch.clamp(shading * albedo * 2, 0., 1.)
         return pnts_d, rgb_vals, albedo, shading, normals_d
-

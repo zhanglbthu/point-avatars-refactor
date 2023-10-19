@@ -20,11 +20,8 @@ class TrainRunner():
         torch.set_default_dtype(torch.float32)
         torch.set_num_threads(1)
         self.conf = ConfigFactory.parse_file(kwargs['conf'])
-        # max_batch:8
         self.max_batch = self.conf.get_int('train.max_batch', default='8')
-        # max_points_training: 409600, num_batch * num_points
         self.batch_size = min(int(self.conf.get_int('train.max_points_training') / self.conf.get_int('model.point_cloud.n_init_points')), self.max_batch)
-        # n
         self.nepochs = kwargs['nepochs']
         self.exps_folder_name = self.conf.get_string('train.exps_folder')
         self.optimize_expression = self.conf.get_bool('train.optimize_expression')
@@ -59,7 +56,7 @@ class TrainRunner():
         utils.mkdir_ifnotexists(self.train_dir)
         utils.mkdir_ifnotexists(self.eval_dir)
 
-        # region create checkpoints dirs
+        # create checkpoints dirs
         self.checkpoints_path = os.path.join(self.train_dir, 'checkpoints')
         utils.mkdir_ifnotexists(self.checkpoints_path)
         self.model_params_subdir = "ModelParameters"
@@ -69,7 +66,6 @@ class TrainRunner():
         utils.mkdir_ifnotexists(os.path.join(self.checkpoints_path, self.model_params_subdir))
         utils.mkdir_ifnotexists(os.path.join(self.checkpoints_path, self.optimizer_params_subdir))
         utils.mkdir_ifnotexists(os.path.join(self.checkpoints_path, self.scheduler_params_subdir))
-        # endregion
 
         if self.optimize_inputs:
             self.optimizer_inputs_subdir = "OptimizerInputs"
@@ -88,90 +84,36 @@ class TrainRunner():
         print('Loading data ...')
 
         self.use_background = self.conf.get_bool('dataset.use_background', default=False)
-        self.sub_view_train = self.conf.get_list('dataset.train.sub_view', default=[]) # change
-        self.sub_view_plot = self.conf.get_list('dataset.test.sub_view', default=[]) # change
-        
-        self.n_views = len(self.sub_view_train)
-        print('sub_view_train: ', self.sub_view_train)
-        print('sub_view_plot: ', self.sub_view_plot)
+
         # instantiate a dataset object
-        # json_name: 'flame_params.json'
-        # change the dataset class from single view to multi views
-        if 'sub_view' in self.conf.get_config('dataset.train'):
-            del self.conf.get_config('dataset.train')['sub_view']
-            print('sub_view_train is deleted from config file\n')
-        if 'sub_view' in self.conf.get_config('dataset.test'):
-            del self.conf.get_config('dataset.test')['sub_view']
-            print('sub_view_plot is deleted from config file\n')
-        # self.train_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
-                                                                                        #   subject_name=self.conf.get_string('dataset.subject_name'),
-                                                                                        #   json_name=self.conf.get_string('dataset.json_name'),
-                                                                                        #   use_mean_expression=self.conf.get_bool('dataset.use_mean_expression', default=False),
-                                                                                        #   use_var_expression=self.conf.get_bool('dataset.use_var_expression', default=False),
-                                                                                        #   use_background=self.use_background,
-                                                                                        #   is_eval=False,
-                                                                                        #   **self.conf.get_config('dataset.train'))
+        self.train_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
+                                                                                          subject_name=self.conf.get_string('dataset.subject_name'),
+                                                                                          json_name=self.conf.get_string('dataset.json_name'),
+                                                                                          use_mean_expression=self.conf.get_bool('dataset.use_mean_expression', default=False),
+                                                                                          use_var_expression=self.conf.get_bool('dataset.use_var_expression', default=False),
+                                                                                          use_background=self.use_background,
+                                                                                          is_eval=False,
+                                                                                          **self.conf.get_config('dataset.train'))
 
-        # self.plot_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
-                                                                                        #  subject_name=self.conf.get_string('dataset.subject_name'),
-                                                                                        #  json_name=self.conf.get_string('dataset.json_name'),
-                                                                                        #  use_background=self.use_background,
-                                                                                        #  is_eval=True,
-                                                                                        #  **self.conf.get_config('dataset.test'))
-
-        self.train_datasets, self.plot_datasets = [], []
-        for view in self.sub_view_train:
-            self.train_datasets.append(utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
-                                                                                         subject_name=self.conf.get_string('dataset.subject_name'),
-                                                                                         json_name=self.conf.get_string('dataset.json_name'),
-                                                                                         use_mean_expression=self.conf.get_bool('dataset.use_mean_expression', default=False),
-                                                                                         use_var_expression=self.conf.get_bool('dataset.use_var_expression', default=False),
-                                                                                         use_background=self.use_background,
-                                                                                         is_eval=False,
-                                                                                         sub_view=view,
-                                                                                         **self.conf.get_config('dataset.train')))
-            self.plot_datasets.append(utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
+        self.plot_dataset = utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
                                                                                          subject_name=self.conf.get_string('dataset.subject_name'),
                                                                                          json_name=self.conf.get_string('dataset.json_name'),
                                                                                          use_background=self.use_background,
                                                                                          is_eval=True,
-                                                                                         sub_view=view,
-                                                                                         **self.conf.get_config('dataset.test')))
-        self.train_dataset = self.train_datasets[0]
-        self.plot_dataset = self.plot_datasets[0]
-        # print train_datasets length
-        print('train_datasets length: ', len(self.train_datasets))
+                                                                                         **self.conf.get_config('dataset.test'))
         print('Finish loading data ...')
-        
-        # change: shape_params, mean_expression use mean of all views instead of single view
 
-        total_shape_params = torch.zeros_like(self.train_datasets[0].shape_params)
-        total_expression = torch.zeros_like(self.train_datasets[0].mean_expression)
-        total_var_expression = torch.zeros_like(self.train_datasets[0].var_expression)
-        
-        for dataset in self.train_datasets:
-            total_shape_params += dataset.shape_params
-            total_expression += dataset.mean_expression
-            total_var_expression += dataset.var_expression
-        
-        self.mean_shape_params = total_shape_params / self.n_views
-        self.mean_expression = total_expression / self.n_views
-        self.mean_expression_var = total_var_expression / self.n_views
-        
-        # todo: change shape_params, mean_expression
         self.model = PointAvatar(conf=self.conf.get_config('model'),
-                                shape_params=self.mean_shape_params, # change
+                                shape_params=self.train_dataset.shape_params,
                                 img_res=self.train_dataset.img_res,
-                                canonical_expression=self.mean_expression, # change
+                                canonical_expression=self.train_dataset.mean_expression,
                                 canonical_pose=self.conf.get_float('dataset.canonical_pose', default=0.2),
                                 use_background=self.use_background)
-        
         self._init_dataloader()
         if torch.cuda.is_available():
             self.model.cuda()
 
-        # change
-        self.loss = Loss(**self.conf.get_config('loss'), var_expression=self.mean_expression_var)
+        self.loss = Loss(**self.conf.get_config('loss'), var_expression=self.train_dataset.var_expression)
 
         self.lr = self.conf.get_float('train.learning_rate')
         self.optimizer = torch.optim.Adam([
@@ -182,19 +124,11 @@ class TrainRunner():
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, self.sched_milestones, gamma=self.sched_factor)
         self.upsample_freq = self.conf.get_int('train.upsample_freq', default=5)
         # settings for input parameter optimization
-        # todo: check if need to optimize pose
         if self.optimize_inputs:
             num_training_frames = len(self.train_dataset)
             param = []
-                
             if self.optimize_expression:
-                # change:将每个dataset中的expressions相加取平均
-                total_expressions = []
-                for dataset in self.train_datasets:
-                    total_expressions.append(dataset.data["expressions"])
-                mean_expressions = torch.mean(torch.stack(total_expressions), dim=0)
-                
-                init_expression = torch.cat((mean_expressions, torch.randn(self.train_dataset.data["expressions"].shape[0], max(self.model.deformer_network.num_exp - 50, 0)).float()), dim=1)
+                init_expression = torch.cat((self.train_dataset.data["expressions"], torch.randn(self.train_dataset.data["expressions"].shape[0], max(self.model.deformer_network.num_exp - 50, 0)).float()), dim=1)
                 self.expression = torch.nn.Embedding(num_training_frames, self.model.deformer_network.num_exp, _weight=init_expression, sparse=True).cuda()
                 param += list(self.expression.parameters())
 
@@ -205,7 +139,6 @@ class TrainRunner():
             self.optimizer_cam = torch.optim.SparseAdam(param, self.conf.get_float('train.learning_rate_cam'))
 
         self.start_epoch = 0
-        # region load checkpoints
         if is_continue:
             old_checkpnts_dir = os.path.join(load_path, 'checkpoints')
             saved_model_state = torch.load(
@@ -249,7 +182,7 @@ class TrainRunner():
                         self.camera_pose.load_state_dict(data["camera_pose_state_dict"])
                 except:
                     print("expression or pose parameter group doesn't match")
-        # endregion
+
         self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset,
                                                             batch_size=self.batch_size,
                                                             shuffle=True,
@@ -282,22 +215,6 @@ class TrainRunner():
                                                            collate_fn=self.plot_dataset.collate_fn,
                                                            num_workers=4,
                                                            )
-        # change from single view to multi views
-        self.train_dataloaders, self.plot_dataloaders = [], []
-        for dataset in self.train_datasets:
-            self.train_dataloaders.append(torch.utils.data.DataLoader(dataset,
-                                                            batch_size=self.batch_size,
-                                                            shuffle=True,
-                                                            collate_fn=dataset.collate_fn,
-                                                            num_workers=4,
-                                                            ))
-        for dataset in self.plot_datasets:
-            self.plot_dataloaders.append(torch.utils.data.DataLoader(dataset,
-                                                            batch_size=min(self.batch_size * 2, 10),
-                                                            shuffle=False,
-                                                            collate_fn=dataset.collate_fn,
-                                                            num_workers=4,
-                                                            ))
         self.n_batches = len(self.train_dataloader)
     def save_checkpoints(self, epoch, only_latest=False):
         if not only_latest:
@@ -375,7 +292,7 @@ class TrainRunner():
         acc_loss = {} # accumulate loss
         start_time = torch.cuda.Event(enable_timing=True)
         end_time = torch.cuda.Event(enable_timing=True)
-        print('Start training ...')
+
         # training loop
         for epoch in range(self.start_epoch, self.nepochs + 1): # 0 ~ nepochs
             if epoch in self.GT_lbs_milestones:
@@ -383,13 +300,13 @@ class TrainRunner():
             # if len(self.GT_lbs_milestones) > 0 and epoch >= self.GT_lbs_milestones[-1]:
             #   self.loss.lbs_weight = 0.
 
-            # region save checkpoints
+            # save checkpoints
             if epoch % (self.save_freq * 5) == 0 and epoch != self.start_epoch:
                 self.save_checkpoints(epoch)
             else:
                 if epoch % self.save_freq == 0 and (epoch != self.start_epoch or self.start_epoch == 0):
                     self.save_checkpoints(epoch, only_latest=True)
-            # endregion
+
             if (epoch % self.plot_freq == 0 and epoch < 5) or (epoch % (self.plot_freq * 2) == 0):
                 self.model.eval()
                 if self.optimize_inputs:
@@ -401,43 +318,40 @@ class TrainRunner():
                 eval_iterator = iter(self.plot_dataloader) 
                 start_time.record()
                 
-                # change
-                self.eval_iters = [iter(dataloader) for dataloader in self.plot_dataloaders]
                 for batch_index in range(len(self.plot_dataloader)):
-                    for i, eval_iterator in enumerate(self.eval_iters):
-                        indices, model_input, ground_truth = next(eval_iterator)
-                        for k, v in model_input.items():
-                            try:
-                                model_input[k] = v.cuda()
-                            except:
-                                model_input[k] = v
-                        for k, v in ground_truth.items():
-                            try:
-                                ground_truth[k] = v.cuda()
-                            except:
-                                ground_truth[k] = v
+                    indices, model_input, ground_truth = next(eval_iterator)
+                    for k, v in model_input.items():
+                        try:
+                            model_input[k] = v.cuda()
+                        except:
+                            model_input[k] = v
+                    for k, v in ground_truth.items():
+                        try:
+                            ground_truth[k] = v.cuda()
+                        except:
+                            ground_truth[k] = v
 
-                        model_outputs = self.model(model_input)
-                        for k, v in model_outputs.items():
-                            try:
-                                model_outputs[k] = v.detach()
-                            except:
-                                model_outputs[k] = v
-                        plot_dir = [os.path.join(self.eval_dir, model_input['sub_dir'][i], 'epoch_'+str(epoch)) for i in range(len(model_input['sub_dir']))]
-                        img_names = model_input['img_name'][:, 0].cpu().numpy()
-                        print("Plotting images: {}".format(img_names))
-                        utils.mkdir_ifnotexists(os.path.join(self.eval_dir, model_input['sub_dir'][0]))
+                    model_outputs = self.model(model_input)
+                    for k, v in model_outputs.items():
+                        try:
+                            model_outputs[k] = v.detach()
+                        except:
+                            model_outputs[k] = v
+                    plot_dir = [os.path.join(self.eval_dir, model_input['sub_dir'][i], 'epoch_'+str(epoch)) for i in range(len(model_input['sub_dir']))]
+                    img_names = model_input['img_name'][:, 0].cpu().numpy()
+                    print("Plotting images: {}".format(img_names))
+                    utils.mkdir_ifnotexists(os.path.join(self.eval_dir, model_input['sub_dir'][0]))
 
-                        plt.plot(img_names,
-                                model_outputs,
-                                ground_truth,
-                                plot_dir,
-                                epoch,
-                                self.img_res,
-                                is_eval=False,
-                                first=(batch_index==0),
-                                )
-                        del model_outputs, ground_truth
+                    plt.plot(img_names,
+                             model_outputs,
+                             ground_truth,
+                             plot_dir,
+                             epoch,
+                             self.img_res,
+                             is_eval=False,
+                             first=(batch_index==0),
+                             )
+                    del model_outputs, ground_truth
 
                 end_time.record()
                 torch.cuda.synchronize()
@@ -451,7 +365,7 @@ class TrainRunner():
                         self.camera_pose.train()
 
             start_time.record()
-            
+
             # Prunning
             if epoch != self.start_epoch and self.model.raster_settings.radius >= 0.006:
                 self.model.pc.prune(self.model.visible_points)
@@ -475,75 +389,67 @@ class TrainRunner():
 
             # re-init visible point tensor each epoch
             self.model.visible_points = torch.zeros(self.model.pc.points.shape[0]).bool().cuda()
-            self.train_iters = [iter(dataloader) for dataloader in self.train_dataloaders]
-            for batch_index in range(len(self.train_dataloader)):
-                all_loss = []
-                all_loss_output = []
+
+            for data_index, (indices, model_input, ground_truth) in enumerate(self.train_dataloader):
+                for k, v in model_input.items():
+                    try:
+                        model_input[k] = v.cuda()
+                    except:
+                        model_input[k] = v
+                for k, v in ground_truth.items():
+                    try:
+                        ground_truth[k] = v.cuda()
+                    except:
+                        ground_truth[k] = v
+
+                if self.optimize_inputs:
+                    if self.optimize_expression:
+                        model_input['expression'] = self.expression(model_input["idx"]).squeeze(1)
+                    if self.optimize_pose:
+                        model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
+                        model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
+
+                model_outputs = self.model(model_input)
                 
+                loss_output = self.loss(model_outputs, ground_truth)
+
+                loss = loss_output['loss']
+
                 self.optimizer.zero_grad()
                 if self.optimize_inputs and epoch > 10:
                     self.optimizer_cam.zero_grad()
-                    
-                for i, dataloader in enumerate(self.train_iters):
-                    indices, model_input, ground_truth = next(dataloader)
-                    for k, v in model_input.items():
-                        try:
-                            model_input[k] = v.cuda()
-                        except:
-                            model_input[k] = v
-                    for k, v in ground_truth.items():
-                        try:
-                            ground_truth[k] = v.cuda()
-                        except:
-                            ground_truth[k] = v
-                    if self.optimize_inputs:
-                        if self.optimize_expression:
-                                model_input['expression'] = self.expression(model_input["idx"]).squeeze(1)
-                        if self.optimize_pose:
-                            model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
-                            model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
 
-                    model_outputs = self.model(model_input)
-                        
-                    loss_output = self.loss(model_outputs, ground_truth)
-
-                    loss = loss_output['loss']
-                        
-                    loss.backward()
-                    
-                    all_loss.append(loss)
-                    all_loss_output.append(loss_output)
-
+                loss.backward()
                 self.optimizer.step()
                 if self.optimize_inputs and epoch > 10:
                     self.optimizer_cam.step()
 
-                # for k, v in loss_output.items():
-                #     loss_output[k] = v.detach().item()
-                #     if k not in acc_loss:
-                #         acc_loss[k] = [v]
-                #     else:
-                #         acc_loss[k].append(v)
+                for k, v in loss_output.items():
+                    loss_output[k] = v.detach().item()
+                    if k not in acc_loss:
+                        acc_loss[k] = [v]
+                    else:
+                        acc_loss[k].append(v)
 
-                # acc_loss['visible_percentage'] = (torch.sum(self.model.visible_points)/self.model.pc.points.shape[0]).unsqueeze(0)
-                # if data_index % 50 == 0:
-                #     for k, v in acc_loss.items():
-                #         acc_loss[k] = sum(v) / len(v)
-                #     print_str = '{0} [{1}] ({2}/{3}): '.format(self.methodname, epoch, data_index, self.n_batches)
-                #     for k, v in acc_loss.items():
-                #         print_str += '{}: {:.3g} '.format(k, v)
-                #     print(print_str)
-                #     acc_loss['num_points'] = self.model.pc.points.shape[0]
-                #     acc_loss['radius'] = self.model.raster_settings.radius
+                acc_loss['visible_percentage'] = (torch.sum(self.model.visible_points)/self.model.pc.points.shape[0]).unsqueeze(0)
+                if data_index % 50 == 0:
+                    for k, v in acc_loss.items():
+                        acc_loss[k] = sum(v) / len(v)
+                    print_str = '{0} [{1}] ({2}/{3}): '.format(self.methodname, epoch, data_index, self.n_batches)
+                    for k, v in acc_loss.items():
+                        print_str += '{}: {:.3g} '.format(k, v)
+                    print(print_str)
+                    acc_loss['num_points'] = self.model.pc.points.shape[0]
+                    acc_loss['radius'] = self.model.raster_settings.radius
 
-                #     acc_loss['lr'] = self.scheduler.get_last_lr()[0]
-                #     wandb.log(acc_loss, step=epoch * len(self.train_dataset) + data_index * self.batch_size)
-                #     acc_loss = {}
+                    acc_loss['lr'] = self.scheduler.get_last_lr()[0]
+                    wandb.log(acc_loss, step=epoch * len(self.train_dataset) + data_index * self.batch_size)
+                    acc_loss = {}
 
             self.scheduler.step()
             end_time.record()
             torch.cuda.synchronize()
-            # wandb.log({"timing_epoch": start_time.elapsed_time(end_time)}, step=(epoch+1) * len(self.train_dataset))
+            wandb.log({"timing_epoch": start_time.elapsed_time(end_time)}, step=(epoch+1) * len(self.train_dataset))
             print("Epoch time: {} s".format(start_time.elapsed_time(end_time)/1000))
         self.save_checkpoints(self.nepochs + 1)
 
