@@ -1,2 +1,3 @@
 # 忽略所有文件夹下的generic_model.pkl文件
 **/generic_model.pkl
+**/__pycache__/
