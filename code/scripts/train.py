@@ -130,6 +130,7 @@ class TrainRunner():
                                                                                          is_eval=False,
                                                                                          sub_view=view,
                                                                                          **self.conf.get_config('dataset.train')))
+        for view in self.sub_view_plot:
             self.plot_datasets.append(utils.get_class(self.conf.get_string('train.dataset_class'))(data_folder=self.conf.get_string('dataset.data_folder'),
                                                                                          subject_name=self.conf.get_string('dataset.subject_name'),
                                                                                          json_name=self.conf.get_string('dataset.json_name'),
