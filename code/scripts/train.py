@@ -14,7 +14,6 @@ from model.point_avatar_model import PointAvatar
 from model.loss import Loss
 print = partial(print, flush=True)
 
-
 class TrainRunner():
     def __init__(self, **kwargs):
         torch.set_default_dtype(torch.float32)
@@ -382,6 +381,7 @@ class TrainRunner():
             self.model.visible_points = torch.zeros(self.model.pc.points.shape[0]).bool().cuda()
 
             for data_index, (indices, model_input, ground_truth) in enumerate(self.train_dataloader):
+
                 for k, v in model_input.items():
                     try:
                         model_input[k] = v.cuda()
@@ -400,20 +400,27 @@ class TrainRunner():
                         model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
                         model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
 
-                model_outputs = self.model(model_input)
+                # change: add sub_step
+                for step in range(50):
+                    # print progress
+                    if (step+1) % 10 == 0:
+                        print(f"data_index: {data_index}, step: {step+1}")
+                        
+                    model_outputs = self.model(model_input)
 
-                loss_output = self.loss(model_outputs, ground_truth)
+                    loss_output = self.loss(model_outputs, ground_truth)
 
-                loss = loss_output['loss']
+                    loss = loss_output['loss']
 
-                self.optimizer.zero_grad()
-                if self.optimize_inputs and epoch > 10:
-                    self.optimizer_cam.zero_grad()
+                    self.optimizer.zero_grad()
+                    
+                    if self.optimize_inputs and epoch > 10:
+                        self.optimizer_cam.zero_grad()
 
-                loss.backward()
-                self.optimizer.step()
-                if self.optimize_inputs and epoch > 10:
-                    self.optimizer_cam.step()
+                    loss.backward()
+                    self.optimizer.step()
+                    if self.optimize_inputs and epoch > 10:
+                        self.optimizer_cam.step()
 
                 for k, v in loss_output.items():
                     loss_output[k] = v.detach().item()
