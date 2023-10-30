@@ -12,6 +12,8 @@ import wandb
 from functools import partial
 from model.point_avatar_model import PointAvatar
 from model.loss import Loss
+import copy
+
 print = partial(print, flush=True)
 
 
@@ -477,47 +479,53 @@ class TrainRunner():
             # re-init visible point tensor each epoch
             self.model.visible_points = torch.zeros(self.model.pc.points.shape[0]).bool().cuda()
             self.train_iters = [iter(dataloader) for dataloader in self.train_dataloaders]
-            for batch_index in range(len(self.train_dataloader)):
-                all_loss = []
-                all_loss_output = []
-                
-                self.optimizer.zero_grad()
-                if self.optimize_inputs and epoch > 10:
-                    self.optimizer_cam.zero_grad()
+            # copy train_dataloaders[0]
+            train_dataloader_copy = copy.deepcopy(self.train_dataloaders[0])
+            for _ in enumerate(train_dataloader_copy):
+                model_input_all = []
+                ground_truth_all = []
+                for step in range(50):
+                    loss = 0
+                    for i, dataloader in enumerate(self.train_iters):
+                        if step == 0:
+                            indices, model_input, ground_truth = next(dataloader)
+                            model_input_all.append(model_input)
+                            ground_truth_all.append(ground_truth)
+                            
+                        model_input = model_input_all[i]
+                        ground_truth = ground_truth_all[i]
+                        for k, v in model_input.items():
+                            try:
+                                model_input[k] = v.cuda()
+                            except:
+                                model_input[k] = v
+                        for k, v in ground_truth.items():
+                            try:
+                                ground_truth[k] = v.cuda()
+                            except:
+                                ground_truth[k] = v
+                        if self.optimize_inputs:
+                            if self.optimize_expression:
+                                    model_input['expression'] = self.expression(model_input["idx"]).squeeze(1)
+                            if self.optimize_pose:
+                                model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
+                                model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
+
+                        model_outputs = self.model(model_input)
+                            
+                        loss_output = self.loss(model_outputs, ground_truth)
+
+                        loss += loss_output['loss'] / self.n_views
                     
-                for i, dataloader in enumerate(self.train_iters):
-                    indices, model_input, ground_truth = next(dataloader)
-                    for k, v in model_input.items():
-                        try:
-                            model_input[k] = v.cuda()
-                        except:
-                            model_input[k] = v
-                    for k, v in ground_truth.items():
-                        try:
-                            ground_truth[k] = v.cuda()
-                        except:
-                            ground_truth[k] = v
-                    if self.optimize_inputs:
-                        if self.optimize_expression:
-                                model_input['expression'] = self.expression(model_input["idx"]).squeeze(1)
-                        if self.optimize_pose:
-                            model_input['flame_pose'] = self.flame_pose(model_input["idx"]).squeeze(1)
-                            model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
-
-                    model_outputs = self.model(model_input)
-                        
-                    loss_output = self.loss(model_outputs, ground_truth)
-
-                    loss = loss_output['loss']
-                        
+                    self.optimizer.zero_grad()
+                    if self.optimize_inputs and epoch > 10:
+                        self.optimizer_cam.zero_grad()
+                    
                     loss.backward()
                     
-                    all_loss.append(loss)
-                    all_loss_output.append(loss_output)
-
-                self.optimizer.step()
-                if self.optimize_inputs and epoch > 10:
-                    self.optimizer_cam.step()
+                    self.optimizer.step()
+                    if self.optimize_inputs and epoch > 10:
+                        self.optimizer_cam.step()
 
                 # for k, v in loss_output.items():
                 #     loss_output[k] = v.detach().item()
