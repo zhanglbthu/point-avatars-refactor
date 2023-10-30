@@ -401,10 +401,10 @@ class TrainRunner():
                         model_input['cam_pose'][:, :3, 3] = self.camera_pose(model_input["idx"]).squeeze(1)
 
                 # change: add sub_step
-                for step in range(50):
-                    # print progress
-                    if (step+1) % 10 == 0:
-                        print(f"data_index: {data_index}, step: {step+1}")
+                for step in range(10):
+                    # 根据data_index，step信息打印当前epoch进度
+                    if data_index % 50 == 0 and step == 0:
+                        print("Epoch: {} [{}/{}]".format(epoch, data_index, self.n_batches))
                         
                     model_outputs = self.model(model_input)
 

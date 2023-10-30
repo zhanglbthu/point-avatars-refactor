@@ -90,7 +90,11 @@ class FaceDataset(torch.utils.data.Dataset):
                 self.data["image_paths"].append(image_path)
                 self.data["mask_paths"].append(image_path.replace('image', 'mask'))
                 self.data["img_name"].append(int(frame["file_path"].split('/')[-1]))
-
+        
+        # change
+        if is_eval:
+            self.sub_dir_len = len(sub_dir)
+            subsample = len(self.data["image_paths"]) // self.sub_dir_len
 
         self.gt_dir = instance_dir
         self.shape_params = torch.tensor(camera_dict['shape_params']).float().unsqueeze(0)
