@@ -481,10 +481,13 @@ class TrainRunner():
             self.train_iters = [iter(dataloader) for dataloader in self.train_dataloaders]
             # copy train_dataloaders[0]
             train_dataloader_copy = copy.deepcopy(self.train_dataloaders[0])
-            for _ in enumerate(train_dataloader_copy):
+            sub_step = 20
+            for batch_index, _ in enumerate(train_dataloader_copy):
                 model_input_all = []
                 ground_truth_all = []
-                for step in range(50):
+                for step in range(sub_step):
+                    if (step + 1) % 10 == 0:
+                        print("Epoch: {} / {}, Batch: {} / {}, step: {} / {}".format(epoch, self.nepochs, batch_index, len(self.train_dataloader), step + 1, sub_step))
                     loss = 0
                     for i, dataloader in enumerate(self.train_iters):
                         if step == 0:

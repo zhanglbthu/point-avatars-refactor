@@ -26,7 +26,7 @@ def save_pcl_to_ply(filename, points, colors=None, normals=None):
     return
 
 
-def plot(img_index, model_outputs, ground_truth, path, epoch, img_res, is_eval=False, first=False):
+def plot(img_index, model_outputs, ground_truth, path, epoch, img_res, is_eval=False, first=False, plot_all=False):
     # arrange data to plot
     batch_size = model_outputs['batch_size']
     plot_images(model_outputs, ground_truth, path, epoch, img_index, 1, img_res, batch_size, is_eval)
@@ -36,7 +36,7 @@ def plot(img_index, model_outputs, ground_truth, path, epoch, img_res, is_eval=F
         return
     for idx, img_idx in enumerate(img_index):
         wo_epoch_path = path[idx].replace('/epoch_{}'.format(epoch), '')
-        if img_idx in SAVE_OBJ_LIST:
+        if img_idx in SAVE_OBJ_LIST or plot_all:
             deformed_color = model_outputs["pnts_color_deformed"].reshape(batch_size, -1, 3)[idx]
             filename = '{0}/{1:04d}_deformed_color_{2}.ply'.format(wo_epoch_path, epoch, img_idx)
             save_pcl_to_ply(filename, model_outputs['deformed_points'].reshape(batch_size, -1, 3)[idx],

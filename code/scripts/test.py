@@ -37,6 +37,7 @@ class TestRunner():
             load_path = kwargs['load_path']
         else:
             load_path = self.train_dir
+        print('load_path: ', load_path)
         assert os.path.exists(load_path)
 
         utils.mkdir_ifnotexists(self.eval_dir)
@@ -145,6 +146,7 @@ class TestRunner():
                     self.camera_pose.load_state_dict(data["camera_pose_state_dict"])
                 print('Using pre-tracked test expressions')
             except:
+                print('Could not load pre-tracked test expressions')
                 self.optimize_tracking = True
                 from model.loss import Loss
                 self.loss = Loss(mask_weight=0.0)
@@ -253,6 +255,7 @@ class TestRunner():
                      self.img_res,
                      is_eval=eval_all,
                      first=is_first_batch,
+                     plot_all=True,
                      )
             if is_first_batch:
                 sdf_values = model_outputs['sdf_values']
